@@ -6,7 +6,30 @@ resource "aws_wafv2_web_acl" "this" {
   default_action {
     allow {}
   }
+  # Rate limit — block IPs exceeding 1000 requests per 5 minutes
+  # Priority 0 = evaluated first, before all managed rule groups
+  # Protects against brute force, credential stuffing, and scraping
+  rule {
+    name     = "RateLimitPerIP"
+    priority = 0
 
+    action {
+      block {}
+    }
+
+    statement {
+      rate_based_statement {
+        limit              = 1000
+        aggregate_key_type = "IP"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.name}-rate-limit"
+      sampled_requests_enabled   = true
+    }
+  }
   # AWS managed core rule set — covers OWASP Top 10
   rule {
     name     = "AWSManagedRulesCommonRuleSet"
@@ -67,3 +90,4 @@ resource "aws_wafv2_web_acl" "this" {
 
   tags = var.tags
 }
+
