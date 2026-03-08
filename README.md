@@ -5,6 +5,7 @@
 Clone repository
 
 git clone https://github.com/xarismy21/charis-repo
+
 cd charis-repo
 
 ## Build API
