@@ -4,8 +4,6 @@ This document describes cost trade-offs and default performance configurations.
 
 ---
 
-# Load Balancer Architecture Comparison
-
 ## ALB
 
 Pros
@@ -261,4 +259,5 @@ default_capacity_provider_strategy {
   base              = 0
 }
 ```
+
 
