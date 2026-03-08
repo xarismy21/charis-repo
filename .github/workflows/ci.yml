@@ -1,0 +1,245 @@
+name: CI — Build, Scan, Plan
+
+# Triggers:
+#   push to main   → full pipeline (build + scan + tf plan for both envs)
+#   pull request   → build + scan only (no plan, no push to registry)
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  id-token: write   # required for OIDC authentication to AWS
+  contents: read
+  security-events: write  # required to upload SARIF to GitHub Security tab
+  packages: write
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: charis-api
+
+jobs:
+  # ── Job 1: Build image, run Trivy scan, generate SBOM, push to ECR ───────────
+  build-scan-push:
+    name: Build · Scan · Push
+    runs-on: ubuntu-latest
+
+    outputs:
+      sha-tag: ${{ steps.meta.outputs.sha-tag }}
+      semver-tag: ${{ steps.meta.outputs.semver-tag }}
+      image-digest: ${{ steps.build.outputs.digest }}
+      ecr-registry: ${{ steps.login-ecr.outputs.registry }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Image metadata (sha tag + optional semver tag) ────────────────────
+      - name: Generate image tags
+        id: meta
+        run: |
+          SHA_TAG="sha-$(git rev-parse --short HEAD)"
+          echo "sha-tag=${SHA_TAG}" >> "$GITHUB_OUTPUT"
+          if git describe --exact-match --tags HEAD 2>/dev/null; then
+            SEMVER=$(git describe --exact-match --tags HEAD)
+            echo "semver-tag=${SEMVER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── AWS OIDC — no stored credentials, no rotation burden ─────────────
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── Docker BuildKit with GitHub Actions layer cache ───────────────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app
+          # Only push on merges to main — not on PRs
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.sha-tag }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          build-args: |
+            VERSION=${{ steps.meta.outputs.sha-tag }}
+            BUILD_TIME=${{ github.run_id }}
+          # Layer cache dramatically speeds up subsequent builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      # ── Trivy vulnerability scan — fails pipeline on CRITICAL/HIGH ────────
+      # Gate: any unfixed CRITICAL or HIGH CVE blocks the pipeline
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.sha-tag }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+      # ── SBOM generation (Syft) — supply chain transparency ───────────────
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.sha-tag }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload security artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-${{ github.sha }}
+          path: |
+            trivy-results.sarif
+            sbom.spdx.json
+          retention-days: 30
+
+  # ── Job 2: Terraform plan for AWS prod ────────────────────────────────────
+  tf-plan-aws:
+    name: Terraform Plan · AWS Prod
+    runs-on: ubuntu-latest
+    needs: build-scan-push
+    # Only run plans on main branch merges — not on PRs
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.6"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        working-directory: infra/envs/prod-aws
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: infra/envs/prod-aws
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: infra/envs/prod-aws
+        env:
+          TF_VAR_image_tag: ${{ needs.build-scan-push.outputs.sha-tag }}
+          TF_VAR_github_org: ${{ github.repository_owner }}
+        run: |
+          terraform plan \
+            -out=tfplan.binary \
+            -var="image_tag=${{ needs.build-scan-push.outputs.sha-tag }}"
+          terraform show -json tfplan.binary > tfplan.json
+
+      - name: Upload Terraform plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-prod-aws-${{ github.sha }}
+          path: |
+            infra/envs/prod-aws/tfplan.binary
+            infra/envs/prod-aws/tfplan.json
+          retention-days: 7
+
+  # ── Job 3: Terraform plan for Azure staging ───────────────────────────────
+  tf-plan-azure:
+    name: Terraform Plan · Azure Staging
+    runs-on: ubuntu-latest
+    needs: build-scan-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.6"
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get ECR token for staging (Azure pulls from ECR)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        working-directory: infra/envs/staging-azure
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: infra/envs/staging-azure
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: infra/envs/staging-azure
+        env:
+          TF_VAR_image_tag: ${{ needs.build-scan-push.outputs.sha-tag }}
+          TF_VAR_ecr_registry: ${{ needs.build-scan-push.outputs.ecr-registry }}
+          TF_VAR_ecr_password: ${{ secrets.ECR_PASSWORD }}
+        run: |
+          terraform plan \
+            -out=tfplan.binary \
+            -var="image_tag=${{ needs.build-scan-push.outputs.sha-tag }}"
+          terraform show -json tfplan.binary > tfplan.json
+
+      - name: Upload Terraform plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-staging-azure-${{ github.sha }}
+          path: |
+            infra/envs/staging-azure/tfplan.binary
+            infra/envs/staging-azure/tfplan.json
+          retention-days: 7
+
+  # ── Summary ───────────────────────────────────────────────────────────────
+  summary:
+    name: Pipeline Summary
+    runs-on: ubuntu-latest
+    needs: [build-scan-push, tf-plan-aws, tf-plan-azure]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Write job summary
+        run: |
+          echo "## CI Pipeline Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Step | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Build · Scan · Push | ${{ needs.build-scan-push.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Terraform Plan · AWS | ${{ needs.tf-plan-aws.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Terraform Plan · Azure | ${{ needs.tf-plan-azure.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Image tag:** \`${{ needs.build-scan-push.outputs.sha-tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Next step: approve deployment in Azure Pipelines." >> "$GITHUB_STEP_SUMMARY"

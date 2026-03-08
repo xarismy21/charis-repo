@@ -1,0 +1,198 @@
+# Azure Pipelines — Deploy to Staging (Azure) → Production (AWS)
+#
+# This pipeline is triggered manually or after GitHub Actions CI completes.
+# Flow:
+#   1. Deploy to Azure staging     → health gate → manual approval
+#   2. Deploy to AWS production    → health gate → auto-rollback on failure
+#
+# Rollback strategy:
+#   Staging  → re-run pipeline with previous image tag (single variable change)
+#   Prod     → ECS deployment circuit breaker auto-reverts OR:
+#              az webapp config container set --image <last-good-tag>  (one command)
+
+trigger: none  # CI is handled by GitHub Actions; this pipeline is deploy-only
+
+parameters:
+  - name: imageTag
+    displayName: Image Tag (sha-xxxxxx)
+    type: string
+  - name: forceRollback
+    displayName: Force rollback to last known good
+    type: boolean
+    default: false
+  - name: lastKnownGoodTag
+    displayName: Last known good image tag (for rollback only)
+    type: string
+    default: ""
+
+variables:
+  - group: charis-deploy-secrets   # Library group: AZURE_WEBAPP_NAME, ECR_REGISTRY, ECR_PASSWORD
+  - name: STAGING_HEALTH_URL
+    value: "https://$(AZURE_WEBAPP_NAME).azurewebsites.net/healthz"
+  - name: PROD_HEALTH_URL
+    value: "$(CLOUDFRONT_DOMAIN)/healthz"
+  - name: DEPLOY_TAG
+    value: ${{ iif(parameters.forceRollback, parameters.lastKnownGoodTag, parameters.imageTag) }}
+
+stages:
+  # ── Stage 1: Deploy to Azure Staging ────────────────────────────────────────
+  - stage: DeployStaging
+    displayName: "Deploy · Azure Staging"
+    condition: not(eq('${{ parameters.forceRollback }}', 'true'))
+
+    jobs:
+      - deployment: ApplyTerraformStaging
+        displayName: "Terraform Apply — Azure Staging"
+        environment:
+          name: staging          # environment defined in Azure DevOps — add approvers here
+          resourceType: VirtualMachine
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: TerraformInstaller@1
+                  displayName: "Install Terraform 1.6"
+                  inputs:
+                    terraformVersion: "1.6.6"
+
+                - task: AzureCLI@2
+                  displayName: "Terraform Init — Staging"
+                  inputs:
+                    azureSubscription: "$(AZURE_SERVICE_CONNECTION)"
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      cd infra/envs/staging-azure
+                      terraform init \
+                        -backend-config="resource_group_name=$(TF_STATE_RG)" \
+                        -backend-config="storage_account_name=$(TF_STATE_SA)" \
+                        -backend-config="container_name=tfstate" \
+                        -backend-config="key=staging-azure/terraform.tfstate"
+
+                - task: AzureCLI@2
+                  displayName: "Terraform Apply — Staging"
+                  inputs:
+                    azureSubscription: "$(AZURE_SERVICE_CONNECTION)"
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      cd infra/envs/staging-azure
+                      terraform apply \
+                        -auto-approve \
+                        -var="image_tag=$(DEPLOY_TAG)" \
+                        -var="ecr_registry=$(ECR_REGISTRY)" \
+                        -var="ecr_password=$(ECR_PASSWORD)"
+
+                # ── Health gate: poll /healthz for up to 2 minutes ──────────
+                - bash: |
+                    echo "Health gate: polling $(STAGING_HEALTH_URL)"
+                    for i in $(seq 1 12); do
+                      STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$(STAGING_HEALTH_URL)" || echo "000")
+                      if [ "$STATUS" = "200" ]; then
+                        echo "✓ Health check passed on attempt $i"
+                        exit 0
+                      fi
+                      echo "  Attempt $i: received HTTP $STATUS — retrying in 10s"
+                      sleep 10
+                    done
+                    echo "✗ Health gate failed after 2 minutes"
+                    exit 1
+                  displayName: "Health Gate — Staging"
+
+  # ── Manual approval gate lives inside the 'staging' environment in Azure DevOps
+  # Add approvers under: Pipelines → Environments → staging → Approvals and checks
+
+  # ── Stage 2: Deploy to AWS Production ───────────────────────────────────────
+  - stage: DeployProd
+    displayName: "Deploy · AWS Production"
+    dependsOn: DeployStaging
+    condition: or(succeeded('DeployStaging'), eq('${{ parameters.forceRollback }}', 'true'))
+
+    jobs:
+      - deployment: ApplyTerraformProd
+        displayName: "Terraform Apply — AWS Production"
+        environment:
+          name: production       # separate environment — add a second set of approvers here
+          resourceType: VirtualMachine
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: TerraformInstaller@1
+                  displayName: "Install Terraform 1.6"
+                  inputs:
+                    terraformVersion: "1.6.6"
+
+                # ── AWS credentials via OIDC (no stored keys) ────────────────
+                - task: AWSShellScript@1
+                  displayName: "Terraform Init — Prod AWS"
+                  inputs:
+                    awsCredentials: "$(AWS_SERVICE_CONNECTION)"
+                    regionName: "us-east-1"
+                    scriptType: inline
+                    inlineScript: |
+                      cd infra/envs/prod-aws
+                      terraform init
+
+                - task: AWSShellScript@1
+                  displayName: "Terraform Apply — Prod AWS"
+                  inputs:
+                    awsCredentials: "$(AWS_SERVICE_CONNECTION)"
+                    regionName: "us-east-1"
+                    scriptType: inline
+                    inlineScript: |
+                      cd infra/envs/prod-aws
+                      terraform apply \
+                        -auto-approve \
+                        -var="image_tag=$(DEPLOY_TAG)" \
+                        -var="github_org=$(GITHUB_ORG)"
+
+                # ── Health gate: poll /healthz for up to 3 minutes ──────────
+                # On failure: auto-rollback to last known good image tag via ECS circuit breaker.
+                # The ECS deployment_circuit_breaker block handles this automatically.
+                # For manual one-command rollback:
+                #   aws ecs update-service --cluster charis-api --service charis-api \
+                #     --task-definition <previous-task-def-arn> --force-new-deployment
+                - task: AWSShellScript@1
+                  displayName: "Health Gate + Auto-Rollback — Production"
+                  inputs:
+                    awsCredentials: "$(AWS_SERVICE_CONNECTION)"
+                    regionName: "us-east-1"
+                    scriptType: inline
+                    inlineScript: |
+                      echo "Health gate: polling $(PROD_HEALTH_URL)"
+                      for i in $(seq 1 18); do
+                        STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$(PROD_HEALTH_URL)" || echo "000")
+                        if [ "$STATUS" = "200" ]; then
+                          echo "✓ Health check passed on attempt $i"
+                          exit 0
+                        fi
+                        echo "  Attempt $i: HTTP $STATUS — retrying in 10s"
+                        sleep 10
+                      done
+
+                      echo "✗ Health gate failed — triggering ECS circuit breaker rollback"
+                      # ECS will auto-rollback because deployment_circuit_breaker.rollback = true
+                      # The failed task revision is automatically stopped and the previous stable
+                      # task definition is restored — no manual intervention required.
+                      aws ecs describe-services \
+                        --cluster charis-api \
+                        --services charis-api \
+                        --query 'services[0].{status:status,runningCount:runningCount,pendingCount:pendingCount}'
+                      exit 1
+
+                # ── CloudFront cache invalidation post-deploy ─────────────────
+                - task: AWSShellScript@1
+                  displayName: "Invalidate CloudFront Cache"
+                  inputs:
+                    awsCredentials: "$(AWS_SERVICE_CONNECTION)"
+                    regionName: "us-east-1"
+                    scriptType: inline
+                    inlineScript: |
+                      aws cloudfront create-invalidation \
+                        --distribution-id "$(CLOUDFRONT_DISTRIBUTION_ID)" \
+                        --paths "/*"

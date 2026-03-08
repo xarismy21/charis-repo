@@ -1,0 +1,35 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.json
+tfplan.binary
+.terraform.lock.hcl
+*.auto.tfvars
+terraform.tfvars
+!terraform.tfvars.example
+
+# Secrets — never commit these
+*.pem
+*.key
+*.p12
+.env
+.env.*
+secrets/
+
+# Go
+app/charis-api
+app/*.exe
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp

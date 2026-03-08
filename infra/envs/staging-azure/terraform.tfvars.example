@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars — never commit real values.
+
+location     = "westeurope"
+image_tag    = "sha-abc1234"
+ecr_registry = "123456789.dkr.ecr.us-east-1.amazonaws.com"
+ecr_password = "eyJ..."  # aws ecr get-login-password --region us-east-1
+
+pause_deploy = false
