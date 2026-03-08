@@ -1,6 +1,40 @@
 # Observability — Dashboards & Alert Rules
 
 Covers: SLO definitions, CloudWatch dashboard stub, Application Insights queries, and three alert rules.
+# Observability, SLOs and Alerts
+
+This document defines service level objectives, metrics, and alerting rules for the charis-api service.
+
+---
+
+# Service Level Objectives (SLOs)
+
+Two lightweight SLOs are defined for the API service.
+
+## SLO 1 – Availability
+
+Target:
+
+99.9% monthly availability
+
+Measurement source:
+
+AWS ALB Target 5xx error rate and request count.
+
+Formula:
+
+availability = 1 - (5xx errors / total requests)
+
+Error budget:
+
+0.1% monthly error budget.
+
+Alert:
+
+Trigger when error budget burn exceeds 2% within a 5-minute window.
+
+CloudWatch metric:
+
 
 ---
 
@@ -253,3 +287,4 @@ exceptions
 | order by count_ desc
 | take 10
 ```
+
