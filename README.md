@@ -11,6 +11,7 @@ cd charis-repo
 ## Build API
 
 cd api
+
 go build
 
 ## Build container
@@ -20,5 +21,7 @@ docker build -t charis-api ./docker
 ## Validate infrastructure
 
 cd terraform
+
 terraform init
+
 terraform plan
