@@ -39,9 +39,11 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "static" {
 resource "aws_s3_bucket_lifecycle_configuration" "static" {
   bucket = aws_s3_bucket.static.id
 
-  rule {
+    rule {
     id     = "intelligent-tiering"
     status = "Enabled"
+
+    filter {}
 
     transition {
       days          = 30
@@ -221,3 +223,4 @@ resource "aws_cloudfront_response_headers_policy" "security" {
     }
   }
 }
+
