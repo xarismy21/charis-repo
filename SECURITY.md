@@ -1,6 +1,64 @@
 # Security Baseline
 
 This document describes the security controls applied across all environments, their enforcement points, and planned next steps.
+# Security Controls
+
+This project implements several baseline security controls across CI/CD, infrastructure and runtime.
+
+---
+
+# Identity and Access Management
+
+AWS resources follow the principle of least privilege.
+
+Access model:
+
+• Runtime services use dedicated IAM roles
+• CI/CD uses GitHub OIDC federation
+• No long-lived AWS credentials are stored in GitHub
+
+GitHub Actions assumes the deploy role:
+
+aws:iam::<account-id>:role/charis-api-github-deploy
+
+Permissions are scoped to:
+
+• push images to ECR
+• run Terraform deploy operations
+
+---
+
+# Secrets Management
+
+Sensitive values are never stored in the repository.
+
+Secrets are managed using:
+
+AWS:
+
+• AWS Secrets Manager for runtime secrets
+
+Azure:
+
+• Azure Key Vault for staging environment secrets
+
+CI/CD pipelines reference secrets via secure environment variables.
+
+---
+
+# Container Security
+
+All container images are scanned during CI using Trivy.
+
+Policy:
+
+Pipeline fails if vulnerabilities are detected with severity:
+
+CRITICAL  
+HIGH
+
+Example CI step:
+
 
 ---
 
@@ -145,3 +203,4 @@ CloudFront adds a custom `X-Origin-Verify` header (random 32-character secret) t
 4. **GuardDuty** — enable at the AWS account level (flat $3–5/month for this workload size)
 5. **Azure Defender for Containers** — enable on the subscription for runtime threat detection
 6. **Dependabot / Renovate** — automate Go module and base image updates to reduce CVE exposure window
+
