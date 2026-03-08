@@ -47,7 +47,9 @@ resource "aws_wafv2_web_acl" "this" {
         # Exclude rules that commonly break healthz endpoints
         rule_action_override {
           name = "SizeRestrictions_BODY"
-          action_to_use { count {} }
+          action_to_use {
+  count {}
+}
         }
       }
     }
@@ -90,4 +92,5 @@ resource "aws_wafv2_web_acl" "this" {
 
   tags = var.tags
 }
+
 
