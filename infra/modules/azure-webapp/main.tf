@@ -35,8 +35,8 @@ resource "azurerm_linux_web_app" "this" {
   https_only          = true
 
   site_config {
-    
-    always_on        = var.sku_name != "F1" && var.sku_name != "D1"
+
+    always_on         = var.sku_name != "F1" && var.sku_name != "D1"
     health_check_path = "/healthz"
 
     application_stack {
@@ -52,10 +52,10 @@ resource "azurerm_linux_web_app" "this" {
 
   app_settings = merge(
     {
-      PORT                        = "8080"
-      ENVIRONMENT                 = var.environment
-      WEBSITES_PORT               = "8080"
-      DOCKER_ENABLE_CI            = "true"
+      PORT             = "8080"
+      ENVIRONMENT      = var.environment
+      WEBSITES_PORT    = "8080"
+      DOCKER_ENABLE_CI = "true"
     },
     var.app_settings
   )
@@ -108,7 +108,7 @@ resource "azurerm_linux_web_app_slot" "staging" {
   app_service_id = azurerm_linux_web_app.this.id
 
   site_config {
-    
+
     health_check_path = "/healthz"
     application_stack {
       docker_image_name        = "${var.docker_registry_url}/${var.docker_image}:${var.image_tag}"
