@@ -3,9 +3,7 @@ data "aws_caller_identity" "current" {}
 # AWS-managed prefix list containing all CloudFront edge node CIDRs
 # Using this instead of 0.0.0.0/0 ensures only CloudFront can reach the ALB
 # — direct ALB access is blocked even if the DNS name leaks
-data "aws_ec2_managed_prefix_list" "cloudfront" {
-  name = "com.amazonaws.global.cloudfront.origin-facing"
-}
+
 # ── Networking ────────────────────────────────────────────────────────────────
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidr
@@ -92,20 +90,20 @@ resource "aws_security_group" "alb" {
   description = "ALB: accept HTTPS from CloudFront only"
   vpc_id      = aws_vpc.this.id
 
-  ingress {
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront.id]
-    description     = "HTTPS from CloudFront edge nodes only"
+    ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTPS — protected by X-Origin-Verify header; prefix list exceeds SG rule quota"
   }
 
   ingress {
-    from_port       = 80
-    to_port         = 80
-    protocol        = "tcp"
-    prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront.id]
-    description     = "HTTP redirect from CloudFront edge nodes only"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTP redirect — protected by X-Origin-Verify header"
   }
 
   egress {
@@ -439,4 +437,5 @@ resource "aws_iam_role_policy" "ecs_task" {
     ]
   })
 }
+
 
