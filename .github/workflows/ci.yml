@@ -182,10 +182,13 @@ jobs:
         with:
           terraform_version: "~> 1.6"
 
-      - name: Azure Login
+      - name: Azure Login (OIDC — no stored credentials)
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          
+           client-id: ${{ secrets.AZURE_CLIENT_ID }}
+           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Get ECR token for staging (Azure pulls from ECR)
         uses: aws-actions/configure-aws-credentials@v4
@@ -243,3 +246,4 @@ jobs:
           echo "**Image tag:** \`${{ needs.build-scan-push.outputs.sha-tag }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Next step: approve deployment in Azure Pipelines." >> "$GITHUB_STEP_SUMMARY"
+
