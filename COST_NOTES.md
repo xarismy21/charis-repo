@@ -1,5 +1,119 @@
 # Cost & Performance Notes
 
+This document describes cost trade-offs and default performance configurations.
+
+---
+
+# Load Balancer Architecture Comparison
+
+## ALB
+
+Pros
+
+• native support for ECS and container workloads  
+• layer 7 routing  
+• integrated health checks  
+• supports WAF  
+
+Cons
+
+• fixed hourly cost even with low traffic
+
+Best suited for:
+
+container workloads with dynamic scaling.
+
+---
+
+## API Gateway
+
+Pros
+
+• serverless  
+• no infrastructure to manage  
+• strong throttling controls  
+
+Cons
+
+• higher cost per request at scale  
+• less suitable for long-lived connections
+
+Best suited for:
+
+low traffic APIs or event-driven architectures.
+
+---
+
+## CloudFront Only
+
+Pros
+
+• very low latency globally  
+• integrated caching  
+• cost-efficient for static assets  
+
+Cons
+
+• cannot replace an application load balancer for dynamic workloads.
+
+Best suited for:
+
+static websites and CDN acceleration.
+
+---
+
+# Selected Architecture
+
+This project uses:
+
+CloudFront → ALB → ECS Fargate
+
+Reasoning:
+
+• CloudFront provides global edge caching  
+• ALB manages container traffic and health checks  
+• ECS provides container orchestration.
+
+This balances cost and operational simplicity.
+
+---
+
+# Autoscaling Policy
+
+ECS service autoscaling configuration:
+
+Minimum tasks
+
+2
+
+Maximum tasks
+
+6
+
+Scaling metric
+
+CPU utilization.
+
+Scaling rules:
+
+Scale out when:
+
+CPU > 60% for 2 minutes
+
+Scale in when:
+
+CPU < 30% for 10 minutes
+
+This configuration prevents rapid scaling oscillations.
+
+---
+
+# Static Asset Caching
+
+CloudFront caching policy:
+
+TTL:
+
 ---
 
 ## ALB vs API Gateway vs CloudFront-only — Trade-off Analysis
@@ -147,3 +261,4 @@ default_capacity_provider_strategy {
   base              = 0
 }
 ```
+
