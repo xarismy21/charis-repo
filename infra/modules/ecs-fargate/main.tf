@@ -95,7 +95,7 @@ resource "aws_security_group" "alb" {
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTPS — protected by X-Origin-Verify header; prefix list exceeds SG rule quota"
+    description = "HTTPS from CloudFront - protected by X-Origin-Verify header"
   }
 
   ingress {
@@ -103,7 +103,7 @@ resource "aws_security_group" "alb" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTP redirect — protected by X-Origin-Verify header"
+    description = "HTTP redirect from CloudFront - protected by X-Origin-Verify header"
   }
 
   egress {
@@ -437,5 +437,6 @@ resource "aws_iam_role_policy" "ecs_task" {
     ]
   })
 }
+
 
 
