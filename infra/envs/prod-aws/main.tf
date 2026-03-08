@@ -154,7 +154,7 @@ resource "aws_cloudwatch_metric_alarm" "p95_latency" {
   metric_name = "TargetResponseTime"
   dimensions  = { LoadBalancer = module.ecs.alb_arn }
   period      = 300
-  statistic   = "p95"
+  extended_statistic = "p95"
 
   alarm_actions = var.alarm_sns_arn != "" ? [var.alarm_sns_arn] : []
 }
@@ -188,3 +188,4 @@ variable "budget_alert_emails" {
   type        = list(string)
   default     = []
 }
+
