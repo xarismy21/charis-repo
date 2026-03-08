@@ -60,10 +60,12 @@ On AWS EKS, just use Karpenter — it's faster and smarter. Cluster Autoscaler s
 **Answer:**
 
 Option 1 — DNS-01 challenge: Point a public DNS name at the private IP, then use cert-manager or certbot to get a Let's Encrypt cert via a DNS TXT record. No HTTP traffic ever hits the private IP. Works great, it's free, and it's fully automatable.
+
 Option 2 — Internal CA: Spin up a private CA (Vault PKI or AWS Private CA), issue certs internally, push the root cert to every client. Works air-gapped but every client needs to trust it manually.
 If browsers are involved, go DNS-01. If it's all internal machines you control, internal CA is cleaner.
 
 **Which to choose:**
 - If clients are internal-only machines you control → **Internal CA**
 - If any client is a browser or external system → **DNS-01 with a public DNS name pointing to the private IP**
+
 
