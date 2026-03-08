@@ -1,21 +1,23 @@
 # charis-repo DevOps Assessment
+
 ## Quick Start
 
-cd terraform/infra/envs/staging-azure
-terraform init
-terraform plan
+Clone repository
 
 git clone https://github.com/xarismy21/charis-repo
 cd charis-repo
 
-# Build API
+## Build API
+
 cd api
 go build
 
-# Build container
+## Build container
+
 docker build -t charis-api ./docker
 
-# Validate infrastructure
+## Validate infrastructure
+
 cd terraform
 terraform init
 terraform plan
