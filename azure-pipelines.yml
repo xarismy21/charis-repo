@@ -45,7 +45,7 @@ stages:
         displayName: "Terraform Apply — Azure Staging"
         environment:
           name: staging          # environment defined in Azure DevOps — add approvers here
-          resourceType: VirtualMachine
+          #resourceType: VirtualMachine
         strategy:
           runOnce:
             deploy:
@@ -115,7 +115,7 @@ stages:
         displayName: "Terraform Apply — AWS Production"
         environment:
           name: production       # separate environment — add a second set of approvers here
-          resourceType: VirtualMachine
+          #resourceType: VirtualMachine
         strategy:
           runOnce:
             deploy:
@@ -196,3 +196,4 @@ stages:
                       aws cloudfront create-invalidation \
                         --distribution-id "$(CLOUDFRONT_DISTRIBUTION_ID)" \
                         --paths "/*"
+
