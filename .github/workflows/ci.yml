@@ -1,8 +1,5 @@
 name: CI — Build, Scan, Plan
 
-# Triggers:
-#   push to main   → full pipeline (build + scan + tf plan for both envs)
-#   pull request   → build + scan only (no plan, no push to registry)
 on:
   push:
     branches: [main]
@@ -10,9 +7,9 @@ on:
     branches: [main]
 
 permissions:
-  id-token: write   # required for OIDC authentication to AWS
+  id-token: write
   contents: read
-  security-events: write  # required to upload SARIF to GitHub Security tab
+  security-events: write
   packages: write
 
 env:
@@ -20,7 +17,6 @@ env:
   ECR_REPOSITORY: charis-api
 
 jobs:
-  # ── Job 1: Build image, run Trivy scan, generate SBOM, push to ECR ───────────
   build-scan-push:
     name: Build · Scan · Push
     runs-on: ubuntu-latest
@@ -35,7 +31,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── Image metadata (sha tag + optional semver tag) ────────────────────
       - name: Generate image tags
         id: meta
         run: |
@@ -46,7 +41,6 @@ jobs:
             echo "semver-tag=${SEMVER}" >> "$GITHUB_OUTPUT"
           fi
 
-      # ── AWS OIDC — no stored credentials, no rotation burden ─────────────
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -57,7 +51,6 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # ── Docker BuildKit with GitHub Actions layer cache ───────────────────
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -66,22 +59,17 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./app
-          # Only push on merges to main — not on PRs
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.sha-tag }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
           build-args: |
             VERSION=${{ steps.meta.outputs.sha-tag }}
             BUILD_TIME=${{ github.run_id }}
-          # Layer cache dramatically speeds up subsequent builds
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
 
-      # ── Trivy vulnerability scan — fails pipeline on CRITICAL/HIGH ────────
-      # Gate: any unfixed CRITICAL or HIGH CVE blocks the pipeline
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
@@ -92,13 +80,12 @@ jobs:
           exit-code: "1"
           ignore-unfixed: true
 
-       - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
         if: always() && hashFiles('trivy-results.sarif') != ''
         with:
-        sarif_file: trivy-results.sarif
+          sarif_file: trivy-results.sarif
 
-      # ── SBOM generation (Syft) — supply chain transparency ───────────────
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:
@@ -115,12 +102,10 @@ jobs:
             sbom.spdx.json
           retention-days: 30
 
-  # ── Job 2: Terraform plan for AWS prod ────────────────────────────────────
   tf-plan-aws:
     name: Terraform Plan · AWS Prod
     runs-on: ubuntu-latest
     needs: build-scan-push
-    # Only run plans on main branch merges — not on PRs
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
@@ -166,7 +151,6 @@ jobs:
             infra/envs/prod-aws/tfplan.json
           retention-days: 7
 
-  # ── Job 3: Terraform plan for Azure staging ───────────────────────────────
   tf-plan-azure:
     name: Terraform Plan · Azure Staging
     runs-on: ubuntu-latest
@@ -185,10 +169,9 @@ jobs:
       - name: Azure Login (OIDC — no stored credentials)
         uses: azure/login@v2
         with:
-          
-           client-id: ${{ secrets.AZURE_CLIENT_ID }}
-           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Get ECR token for staging (Azure pulls from ECR)
         uses: aws-actions/configure-aws-credentials@v4
@@ -225,7 +208,6 @@ jobs:
             infra/envs/staging-azure/tfplan.json
           retention-days: 7
 
-  # ── Summary ───────────────────────────────────────────────────────────────
   summary:
     name: Pipeline Summary
     runs-on: ubuntu-latest
@@ -246,5 +228,3 @@ jobs:
           echo "**Image tag:** \`${{ needs.build-scan-push.outputs.sha-tag }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Next step: approve deployment in Azure Pipelines." >> "$GITHUB_STEP_SUMMARY"
-
-
