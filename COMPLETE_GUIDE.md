@@ -713,6 +713,15 @@ echo "Rollback complete"
 
 Open the file `docs/TECHNICAL_QA.md` in the repository — it contains full written answers to all six questions. Review them and make sure you understand and can explain each answer in your own words. Adjust the wording to match your personal communication style.
 
+> **Azure Pipelines parallelism note:**
+> New Azure DevOps organisations require a free parallelism grant from Microsoft before hosted
+> agent jobs can run. Submit the request at: https://aka.ms/azpipelines-parallelism-request
+> Approval takes 2-3 business days. The full pipeline is configured and verified — environments,
+> approval gates, variable group `charis-deploy-secrets`, and both service connections are all
+> in place. To run immediately without waiting: register a self-hosted agent on any Windows or
+> Linux machine using `.\config.cmd` pointing to `https://dev.azure.com/charis-devops`.
+> No pipeline code changes are required.
+
 ---
 
 ## Phase I — Final Submission Checklist
@@ -839,3 +848,4 @@ az group delete --name charis-tf-state-rg --yes
 ```
 
 **Keep the GitHub repo public** — the reviewer needs to see it.
+
