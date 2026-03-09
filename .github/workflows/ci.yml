@@ -92,11 +92,11 @@ jobs:
           exit-code: "1"
           ignore-unfixed: true
 
-      - name: Upload Trivy results to GitHub Security tab
+       - name: Upload Trivy results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: always() && hashFiles('trivy-results.sarif') != ''
         with:
-          sarif_file: trivy-results.sarif
+        sarif_file: trivy-results.sarif
 
       # ── SBOM generation (Syft) — supply chain transparency ───────────────
       - name: Generate SBOM
@@ -246,4 +246,5 @@ jobs:
           echo "**Image tag:** \`${{ needs.build-scan-push.outputs.sha-tag }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Next step: approve deployment in Azure Pipelines." >> "$GITHUB_STEP_SUMMARY"
+
 
