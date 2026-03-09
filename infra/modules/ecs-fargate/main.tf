@@ -97,7 +97,13 @@ resource "aws_security_group" "alb" {
     cidr_blocks = ["0.0.0.0/0"]
     description = "HTTPS from CloudFront - protected by X-Origin-Verify header"
   }
-
+    ingress {
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTP forward listener for CloudFront origin - no ACM cert"
+  }
   ingress {
     from_port   = 80
     to_port     = 80
@@ -437,6 +443,7 @@ resource "aws_iam_role_policy" "ecs_task" {
     ]
   })
 }
+
 
 
 
