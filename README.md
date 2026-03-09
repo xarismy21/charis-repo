@@ -20,3 +20,21 @@ Multi-environment delivery pipeline for `charis-api` — a minimal containerised
 ---
 
 ## Architecture Overview
+
+```text
+GitHub Actions CI
+  ├── Build multi-stage Docker image (Go + scratch base, ~6 MB)
+  ├── Push to AWS ECR (sha tag + semver tag if present)
+  ├── Trivy vulnerability scan (blocks on CRITICAL/HIGH)
+  ├── SBOM generation (Syft → spdx-json)
+  └── Terraform plan for both environments
+
+Azure Pipelines (deploy, gated)
+  ├── [Manual approval] Deploy to Azure Staging
+  │     Web App for Containers (B1) + Azure CDN
+  │     Health gate: /healthz must return 200 within 2 min
+  ├── [Manual approval] Deploy to AWS Production
+  │     ECS Fargate (70% Spot / 30% On-demand) + ALB + CloudFront + WAF
+  │     Health gate + ECS circuit breaker auto-rollback
+  └── CloudFront cache invalidation
+
