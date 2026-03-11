@@ -4,7 +4,7 @@ Multi-environment delivery pipeline for `charis-api` — a minimal containerised
 
 **Stack:** Go · Docker · Terraform ≥ 1.6 · GitHub Actions · Azure Pipelines  
 **Environments:** Staging → Azure (West Europe) · Production → AWS (us-east-1)
-
+blabla
 ---
 
 ## Live Endpoints (AWS Production)
