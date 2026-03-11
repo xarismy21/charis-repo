@@ -157,6 +157,14 @@ jobs:
     needs: build-scan-push
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
+    # ARM_* env vars required — azurerm provider does not pick up Azure CLI
+    # credentials automatically when running as a service principal via OIDC
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: "true"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -228,4 +236,3 @@ jobs:
           echo "**Image tag:** \`${{ needs.build-scan-push.outputs.sha-tag }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Next step: approve deployment in Azure Pipelines." >> "$GITHUB_STEP_SUMMARY"
-
