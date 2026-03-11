@@ -1,16 +1,4 @@
-# Azure Pipelines — Deploy to Staging (Azure) → Production (AWS)
-#
-# This pipeline is triggered manually or after GitHub Actions CI completes.
-# Flow:
-#   1. Deploy to Azure staging     → health gate → manual approval
-#   2. Deploy to AWS production    → health gate → auto-rollback on failure
-#
-# Rollback strategy:
-#   Staging  → re-run pipeline with previous image tag (single variable change)
-#   Prod     → ECS deployment circuit breaker auto-reverts OR:
-#              az webapp config container set --image <last-good-tag>  (one command)
-
-trigger: none  # CI is handled by GitHub Actions; this pipeline is deploy-only
+trigger: none
 
 parameters:
   - name: imageTag
@@ -35,7 +23,6 @@ variables:
     value: ${{ iif(parameters.forceRollback, parameters.lastKnownGoodTag, parameters.imageTag) }}
 
 stages:
-  # ── Stage 1: Deploy to Azure Staging ────────────────────────────────────────
   - stage: DeployStaging
     displayName: "Deploy · Azure Staging"
     condition: not(eq('${{ parameters.forceRollback }}', 'true'))
@@ -62,46 +49,51 @@ stages:
                   displayName: "Terraform Init — Staging"
                   inputs:
                     azureSubscription: "$(AZURE_SERVICE_CONNECTION)"
-                    scriptType: bash
+                    scriptType: ps
                     scriptLocation: inlineScript
                     inlineScript: |
                       cd infra/envs/staging-azure
-                      terraform init \
-                        -backend-config="resource_group_name=$(TF_STATE_RG)" \
-                        -backend-config="storage_account_name=$(TF_STATE_SA)" \
-                        -backend-config="container_name=tfstate" \
+                      terraform init `
+                        -backend-config="resource_group_name=$(TF_STATE_RG)" `
+                        -backend-config="storage_account_name=$(TF_STATE_SA)" `
+                        -backend-config="container_name=tfstate" `
                         -backend-config="key=staging-azure/terraform.tfstate"
 
                 - task: AzureCLI@2
                   displayName: "Terraform Apply — Staging"
                   inputs:
                     azureSubscription: "$(AZURE_SERVICE_CONNECTION)"
-                    scriptType: bash
+                    scriptType: ps
                     scriptLocation: inlineScript
                     inlineScript: |
                       cd infra/envs/staging-azure
-                      terraform apply \
-                        -auto-approve \
-                        -var="image_tag=$(DEPLOY_TAG)" \
-                        -var="ecr_registry=$(ECR_REGISTRY)" \
+                      terraform apply `
+                        -auto-approve `
+                        -var="image_tag=$(DEPLOY_TAG)" `
+                        -var="ecr_registry=$(ECR_REGISTRY)" `
                         -var="ecr_password=$(ECR_PASSWORD)"
 
-                - bash: |
-                    echo "Health gate: polling $(STAGING_HEALTH_URL)"
-                    for i in $(seq 1 12); do
-                      STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$(STAGING_HEALTH_URL)" || echo "000")
-                      if [ "$STATUS" = "200" ]; then
-                        echo "Health check passed on attempt $i"
-                        exit 0
-                      fi
-                      echo "Attempt $i: received HTTP $STATUS — retrying in 10s"
-                      sleep 10
-                    done
-                    echo "Health gate failed after 2 minutes"
-                    exit 1
+                - task: PowerShell@2
                   displayName: "Health Gate — Staging"
+                  inputs:
+                    targetType: inline
+                    script: |
+                      $url = "$(STAGING_HEALTH_URL)"
+                      for ($i = 1; $i -le 12; $i++) {
+                        try {
+                          $response = Invoke-WebRequest -Uri $url -TimeoutSec 5 -UseBasicParsing
+                          if ($response.StatusCode -eq 200) {
+                            Write-Host "Health check passed on attempt $i"
+                            exit 0
+                          }
+                        } catch {
+                          Write-Host "Attempt $i failed — retrying in 10s"
+                        }
+                        Start-Sleep -Seconds 10
+                      }
+                      Write-Host "Health gate failed after 2 minutes"
+                      exit 1
 
-  # ── Stage 2: Deploy to AWS Production ───────────────────────────────────────
   - stage: DeployProd
     displayName: "Deploy · AWS Production"
     dependsOn: DeployStaging
@@ -148,28 +140,25 @@ stages:
                         -var="image_tag=$(DEPLOY_TAG)" \
                         -var="github_org=$(GITHUB_ORG)"
 
-                - task: AWSShellScript@1
-                  displayName: "Health Gate + Auto-Rollback — Production"
+                - task: PowerShell@2
+                  displayName: "Health Gate — Production"
                   inputs:
-                    awsCredentials: "$(AWS_SERVICE_CONNECTION)"
-                    regionName: "us-east-1"
-                    scriptType: inline
-                    inlineScript: |
-                      echo "Health gate: polling $(PROD_HEALTH_URL)"
-                      for i in $(seq 1 18); do
-                        STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$(PROD_HEALTH_URL)" || echo "000")
-                        if [ "$STATUS" = "200" ]; then
-                          echo "Health check passed on attempt $i"
-                          exit 0
-                        fi
-                        echo "Attempt $i: HTTP $STATUS — retrying in 10s"
-                        sleep 10
-                      done
-                      echo "Health gate failed — ECS circuit breaker will auto-rollback"
-                      aws ecs describe-services \
-                        --cluster charis-api \
-                        --services charis-api \
-                        --query 'services[0].{status:status,runningCount:runningCount,pendingCount:pendingCount}'
+                    targetType: inline
+                    script: |
+                      $url = "$(PROD_HEALTH_URL)"
+                      for ($i = 1; $i -le 18; $i++) {
+                        try {
+                          $response = Invoke-WebRequest -Uri $url -TimeoutSec 5 -UseBasicParsing
+                          if ($response.StatusCode -eq 200) {
+                            Write-Host "Health check passed on attempt $i"
+                            exit 0
+                          }
+                        } catch {
+                          Write-Host "Attempt $i failed — retrying in 10s"
+                        }
+                        Start-Sleep -Seconds 10
+                      }
+                      Write-Host "Health gate failed"
                       exit 1
 
                 - task: AWSShellScript@1
