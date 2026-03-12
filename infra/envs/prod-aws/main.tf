@@ -176,6 +176,10 @@ resource "aws_budgets_budget" "daily" {
       subscriber_email_addresses = var.budget_alert_emails
     }
   }
+
+  lifecycle {
+    ignore_changes = [notification]
+  }
 }
 
 data "aws_caller_identity" "current" {}
@@ -191,3 +195,4 @@ variable "budget_alert_emails" {
   type        = list(string)
   default     = []
 }
+
