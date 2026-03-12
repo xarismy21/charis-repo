@@ -65,6 +65,16 @@ stages:
                         -backend-config="container_name=tfstate" `
                         -backend-config="key=staging-azure/terraform.tfstate"
 
+                - task: AWSShellScript@1
+                  displayName: "Refresh ECR password"
+                  inputs:
+                    awsCredentials: "$(AWS_SERVICE_CONNECTION)"
+                    regionName: "us-east-1"
+                    scriptType: inline
+                    inlineScript: |
+                      FRESH=$(aws ecr get-login-password --region us-east-1)
+                      echo "##vso[task.setvariable variable=ECR_PASSWORD;issecret=true]$FRESH"
+
                 - task: AzureCLI@2
                   displayName: "Terraform Apply — Staging"
                   inputs:
@@ -186,4 +196,3 @@ stages:
                       aws cloudfront create-invalidation \
                         --distribution-id "$(CLOUDFRONT_DISTRIBUTION_ID)" \
                         --paths "/*"
-
