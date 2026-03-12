@@ -100,7 +100,7 @@ stages:
                             Write-Host "Health check passed on attempt $i"
                             exit 0
                           }
-                          Write-Host "Attempt $i: HTTP $($response.StatusCode) — retrying in 15s"
+                          Write-Host "Attempt ${i}: HTTP $($response.StatusCode) — retrying in 15s"
                         } catch {
                           Write-Host "Attempt $i failed ($($_.Exception.Message)) — retrying in 15s"
                         }
@@ -186,3 +186,4 @@ stages:
                       aws cloudfront create-invalidation \
                         --distribution-id "$(CLOUDFRONT_DISTRIBUTION_ID)" \
                         --paths "/*"
+
