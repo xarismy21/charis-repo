@@ -11,6 +11,13 @@ locals {
   }
 }
 
+# State migration: module gained count after initial deploy; move old addresses
+# to indexed ones so Terraform does not destroy and re-create existing resources.
+moved {
+  from = module.webapp
+  to   = module.webapp[0]
+}
+
 # ── Web App for Containers ────────────────────────────────────────────────────
 module "webapp" {
   count  = var.pause_deploy ? 0 : 1
