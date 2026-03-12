@@ -10,7 +10,7 @@ locals {
   }
 }
 
-# ── ECR ───────────────────────────────────────────────────────────────────────
+# ── ECR ──────────────────────────────────────────────────────────────────────
 module "ecr" {
   source = "../../modules/ecr"
 
@@ -18,7 +18,7 @@ module "ecr" {
   tags = local.common_tags
 }
 
-# ── WAF (must be us-east-1 for CloudFront) ────────────────────────────────────
+# ── WAF (must be us-east-1 for CloudFront) ───────────────────────────────────
 module "waf" {
   source = "../../modules/waf"
   providers = {
@@ -29,7 +29,7 @@ module "waf" {
   tags = local.common_tags
 }
 
-# ── ECS Fargate + ALB ─────────────────────────────────────────────────────────
+# ── ECS Fargate + ALB ────────────────────────────────────────────────────────
 module "ecs" {
   source = "../../modules/ecs-fargate"
 
@@ -44,8 +44,8 @@ module "ecs" {
   public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
   private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
 
-  task_cpu      = 256
-  task_memory   = 512
+  task_cpu    = 256
+  task_memory = 512
   desired_count = 2
   min_count     = 1
   max_count     = 10
@@ -55,7 +55,7 @@ module "ecs" {
   tags = local.common_tags
 }
 
-# ── S3 + CloudFront ───────────────────────────────────────────────────────────
+# ── S3 + CloudFront ──────────────────────────────────────────────────────────
 module "cdn" {
   source = "../../modules/s3-cloudfront"
   providers = {
@@ -81,7 +81,7 @@ resource "random_password" "origin_verify" {
   special = false
 }
 
-# ── IAM + GitHub OIDC ─────────────────────────────────────────────────────────
+# ── IAM + GitHub OIDC ────────────────────────────────────────────────────────
 module "iam_oidc" {
   source = "../../modules/iam-oidc"
 
@@ -101,7 +101,7 @@ module "iam_oidc" {
   tags = local.common_tags
 }
 
-# ── CloudWatch Alarms ─────────────────────────────────────────────────────────
+# ── CloudWatch Alarms ────────────────────────────────────────────────────────
 resource "aws_cloudwatch_metric_alarm" "alb_error_rate" {
   alarm_name          = "${local.name}-5xx-error-rate"
   comparison_operator = "GreaterThanThreshold"
@@ -150,10 +150,10 @@ resource "aws_cloudwatch_metric_alarm" "p95_latency" {
   alarm_description   = "SLO breach: P95 latency on /healthz > 300ms"
   treat_missing_data  = "notBreaching"
 
-  namespace   = "AWS/ApplicationELB"
-  metric_name = "TargetResponseTime"
-  dimensions  = { LoadBalancer = module.ecs.alb_arn }
-  period      = 300
+  namespace          = "AWS/ApplicationELB"
+  metric_name        = "TargetResponseTime"
+  dimensions         = { LoadBalancer = module.ecs.alb_arn }
+  period             = 300
   extended_statistic = "p95"
 
   alarm_actions = var.alarm_sns_arn != "" ? [var.alarm_sns_arn] : []
@@ -166,12 +166,15 @@ resource "aws_budgets_budget" "daily" {
   limit_unit   = "USD"
   time_unit    = "DAILY"
 
-  notification {
-    comparison_operator        = "GREATER_THAN"
-    threshold                  = 80
-    threshold_type             = "PERCENTAGE"
-    notification_type          = "ACTUAL"
-    subscriber_email_addresses = var.budget_alert_emails
+  dynamic "notification" {
+    for_each = length(var.budget_alert_emails) > 0 ? [1] : []
+    content {
+      comparison_operator        = "GREATER_THAN"
+      threshold                  = 80
+      threshold_type             = "PERCENTAGE"
+      notification_type          = "ACTUAL"
+      subscriber_email_addresses = var.budget_alert_emails
+    }
   }
 }
 
@@ -188,4 +191,3 @@ variable "budget_alert_emails" {
   type        = list(string)
   default     = []
 }
-
