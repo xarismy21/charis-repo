@@ -89,6 +89,7 @@ jobs:
 
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
+        continue-on-error: true
         with:
           image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.sha-tag }}
           format: spdx-json
