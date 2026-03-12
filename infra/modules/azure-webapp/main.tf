@@ -40,13 +40,12 @@ resource "azurerm_linux_web_app" "this" {
     health_check_path = "/healthz"
 
     application_stack {
-      docker_image_name        = docker_image_name = "${var.docker_image}:${var.image_tag}"
+      docker_image_name        = "${var.docker_image}:${var.image_tag}"
       docker_registry_url      = "https://${var.docker_registry_url}"
       docker_registry_username = var.docker_registry_username
       docker_registry_password = var.docker_registry_password
     }
 
-    # Security headers
     http2_enabled = true
   }
 
@@ -101,7 +100,6 @@ resource "azurerm_log_analytics_workspace" "this" {
   tags = var.tags
 }
 
-# Wire Application Insights key into the web app
 resource "azurerm_linux_web_app_slot" "staging" {
   count          = var.enable_staging_slot ? 1 : 0
   name           = "staging"
@@ -111,7 +109,7 @@ resource "azurerm_linux_web_app_slot" "staging" {
 
     health_check_path = "/healthz"
     application_stack {
-      docker_image_name        = "${var.docker_registry_url}/${var.docker_image}:${var.image_tag}"
+      docker_image_name        = "${var.docker_image}:${var.image_tag}"
       docker_registry_url      = "https://${var.docker_registry_url}"
       docker_registry_username = var.docker_registry_username
       docker_registry_password = var.docker_registry_password
@@ -120,4 +118,3 @@ resource "azurerm_linux_web_app_slot" "staging" {
 
   tags = var.tags
 }
-
