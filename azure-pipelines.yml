@@ -65,15 +65,16 @@ stages:
                         -backend-config="container_name=tfstate" `
                         -backend-config="key=staging-azure/terraform.tfstate"
 
-                - task: AWSShellScript@1
+                - task: PowerShell@2
                   displayName: "Refresh ECR password"
                   inputs:
-                    awsCredentials: "$(AWS_SERVICE_CONNECTION)"
-                    regionName: "us-east-1"
-                    scriptType: inline
-                    inlineScript: |
-                      FRESH=$(aws ecr get-login-password --region us-east-1)
-                      echo "##vso[task.setvariable variable=ECR_PASSWORD;issecret=true]$FRESH"
+                    targetType: inline
+                    script: |
+                      $env:AWS_ACCESS_KEY_ID     = "$(AWS_ACCESS_KEY_ID)"
+                      $env:AWS_SECRET_ACCESS_KEY = "$(AWS_SECRET_ACCESS_KEY)"
+                      $env:AWS_DEFAULT_REGION    = "us-east-1"
+                      $fresh = aws ecr get-login-password --region us-east-1
+                      Write-Host "##vso[task.setvariable variable=ECR_PASSWORD;issecret=true]$fresh"
 
                 - task: AzureCLI@2
                   displayName: "Terraform Apply — Staging"
@@ -142,27 +143,29 @@ stages:
                   inputs:
                     terraformVersion: "1.6.6"
 
-                - task: AWSShellScript@1
+                - task: PowerShell@2
                   displayName: "Terraform Init — Prod AWS"
                   inputs:
-                    awsCredentials: "$(AWS_SERVICE_CONNECTION)"
-                    regionName: "us-east-1"
-                    scriptType: inline
-                    inlineScript: |
+                    targetType: inline
+                    script: |
+                      $env:AWS_ACCESS_KEY_ID     = "$(AWS_ACCESS_KEY_ID)"
+                      $env:AWS_SECRET_ACCESS_KEY = "$(AWS_SECRET_ACCESS_KEY)"
+                      $env:AWS_DEFAULT_REGION    = "us-east-1"
                       cd infra/envs/prod-aws
                       terraform init
 
-                - task: AWSShellScript@1
+                - task: PowerShell@2
                   displayName: "Terraform Apply — Prod AWS"
                   inputs:
-                    awsCredentials: "$(AWS_SERVICE_CONNECTION)"
-                    regionName: "us-east-1"
-                    scriptType: inline
-                    inlineScript: |
+                    targetType: inline
+                    script: |
+                      $env:AWS_ACCESS_KEY_ID     = "$(AWS_ACCESS_KEY_ID)"
+                      $env:AWS_SECRET_ACCESS_KEY = "$(AWS_SECRET_ACCESS_KEY)"
+                      $env:AWS_DEFAULT_REGION    = "us-east-1"
                       cd infra/envs/prod-aws
-                      terraform apply \
-                        -auto-approve \
-                        -var="image_tag=$(DEPLOY_TAG)" \
+                      terraform apply `
+                        -auto-approve `
+                        -var="image_tag=$(DEPLOY_TAG)" `
                         -var="github_org=$(GITHUB_ORG)"
 
                 - task: PowerShell@2
@@ -186,13 +189,14 @@ stages:
                       Write-Host "Health gate failed"
                       exit 1
 
-                - task: AWSShellScript@1
+                - task: PowerShell@2
                   displayName: "Invalidate CloudFront Cache"
                   inputs:
-                    awsCredentials: "$(AWS_SERVICE_CONNECTION)"
-                    regionName: "us-east-1"
-                    scriptType: inline
-                    inlineScript: |
-                      aws cloudfront create-invalidation \
-                        --distribution-id "$(CLOUDFRONT_DISTRIBUTION_ID)" \
+                    targetType: inline
+                    script: |
+                      $env:AWS_ACCESS_KEY_ID     = "$(AWS_ACCESS_KEY_ID)"
+                      $env:AWS_SECRET_ACCESS_KEY = "$(AWS_SECRET_ACCESS_KEY)"
+                      $env:AWS_DEFAULT_REGION    = "us-east-1"
+                      aws cloudfront create-invalidation `
+                        --distribution-id "$(CLOUDFRONT_DISTRIBUTION_ID)" `
                         --paths "/*"
