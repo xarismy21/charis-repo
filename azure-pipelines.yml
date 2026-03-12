@@ -91,19 +91,22 @@ stages:
                     targetType: inline
                     script: |
                       $url = "$(STAGING_HEALTH_URL)"
-                      for ($i = 1; $i -le 12; $i++) {
+                      Write-Host "Waiting 60s for Azure Web App cold start before polling..."
+                      Start-Sleep -Seconds 60
+                      for ($i = 1; $i -le 30; $i++) {
                         try {
-                          $response = Invoke-WebRequest -Uri $url -TimeoutSec 5 -UseBasicParsing
+                          $response = Invoke-WebRequest -Uri $url -TimeoutSec 15 -UseBasicParsing
                           if ($response.StatusCode -eq 200) {
                             Write-Host "Health check passed on attempt $i"
                             exit 0
                           }
+                          Write-Host "Attempt $i: HTTP $($response.StatusCode) — retrying in 15s"
                         } catch {
-                          Write-Host "Attempt $i failed — retrying in 10s"
+                          Write-Host "Attempt $i failed ($($_.Exception.Message)) — retrying in 15s"
                         }
-                        Start-Sleep -Seconds 10
+                        Start-Sleep -Seconds 15
                       }
-                      Write-Host "Health gate failed after 2 minutes"
+                      Write-Host "Health gate failed after ~8 minutes"
                       exit 1
 
   - stage: DeployProd
